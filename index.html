@@ -1,9 +1,9 @@
 <!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"><title>Chaty</title>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('ct')||(matchMedia('(prefers-color-scheme:light)').matches?'light':'dark')}catch(e){document.documentElement.dataset.theme='dark'}</script>
 <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-192.png"><meta name="theme-color" content="#000000"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Chaty"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"><link rel="stylesheet" href="style.css?v=8"></head><body>
-<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16b87a"/><stop offset="1" stop-color="#0e8fb0"/></linearGradient></defs>
-<symbol id="i-logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="url(#lg)"/><path d="M19 19h26a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H34l-9 8v-8h-6a4 4 0 0 1-4-4V23a4 4 0 0 1 4-4z" fill="#fff"/><circle cx="25" cy="30" r="2.4" fill="#12a58a"/><circle cx="32" cy="30" r="2.4" fill="#12a58a"/><circle cx="39" cy="30" r="2.4" fill="#12a58a"/></symbol>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"><link rel="stylesheet" href="style.css?v=9"></head><body>
+<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8067ff"/><stop offset="1" stop-color="#456be7"/></linearGradient></defs>
+<symbol id="i-logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="18" fill="url(#lg)"/><path d="M19 19h26a4 4 0 0 1 4 4v14a4 4 0 0 1-4 4H34l-9 8v-8h-6a4 4 0 0 1-4-4V23a4 4 0 0 1 4-4z" fill="#fff"/><circle cx="25" cy="30" r="2.4" fill="#7057e8"/><circle cx="32" cy="30" r="2.4" fill="#7057e8"/><circle cx="39" cy="30" r="2.4" fill="#7057e8"/></symbol>
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
 <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></symbol>
 <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.5c3 .2 5 1.8 5 4.5"/></symbol>
@@ -44,7 +44,7 @@
  </div>
 </div>
 <div id="app" class="hidden">
- <aside id="side"><div class="top"><div id="myav"></div><b id="myname"></b><button class="ib" id="newb" title="Nuevo chat"><svg class="i"><use href="#i-plus"/></svg></button><button class="ib hidden" id="bell" title="Activar notificaciones"><svg class="i"><use href="#i-bell"/></svg></button><button class="ib" id="th2" title="Tema"></button><button class="ib" id="prof" title="Perfil"><svg class="i"><use href="#i-user"/></svg></button></div><div class="ttl">Chats</div><div id="list"></div></aside>
+ <aside id="side"><div class="top"><div id="myav"></div><b id="myname"></b><button class="ib" id="newb" title="Acciones"><svg class="i"><use href="#i-plus"/></svg></button><button class="ib" id="notifyb" title="Notificaciones"><svg class="i"><use href="#i-bell"/></svg><span id="ncount" class="ncount hidden"></span></button><button class="ib hidden" id="bell" title="Activar notificaciones"><svg class="i"><use href="#i-bell"/></svg></button><button class="ib" id="th2" title="Tema"></button><button class="ib" id="prof" title="Perfil"><svg class="i"><use href="#i-user"/></svg></button></div><div class="ttl">Chats</div><div id="list"></div></aside>
  <section id="main"><div id="empty"><div class="logo"><div class="lg"><svg><use href="#i-logo"/></svg></div><b>Chaty</b><p>Elige un chat o agrega a alguien por su número.</p></div></div>
   <div id="chat" class="hidden"><div class="top"><button class="ib" id="back"><svg class="i"><use href="#i-back"/></svg></button><div id="chead"><div id="cav"></div><div class="ct"><b id="cname"></b><small id="csub"></small></div></div></div><div id="msgs"></div>
   <div id="rbar" class="hidden"><div class="rq"><b id="rwho"></b><span id="rtxt"></span></div><button class="ib" id="rx" type="button"><svg class="i"><use href="#i-x"/></svg></button></div>
@@ -52,4 +52,4 @@
   <form id="bar"><button class="ib" id="eb" type="button"><svg class="i"><use href="#i-smile"/></svg></button><input id="mi" placeholder="Mensaje" autocomplete="off" maxlength="2000"><button class="send"><svg class="i"><use href="#i-send"/></svg></button></form></div></section>
 </div>
 <div id="modal" class="hidden"></div>
-<script src="app.js?v=8"></script></body></html>
+<script src="app.js?v=9"></script></body></html>

@@ -1,6 +1,7 @@
 const express = require('express'), crypto = require('crypto'), fs = require('fs'), path = require('path');
 const { createClient } = require('@libsql/client/web');
 const cfg = require('./config');
+const realtime = require('./realtime');
 let waitUntil = p => p;
 try { waitUntil = require('@vercel/functions').waitUntil; } catch (e) {}
 
@@ -52,6 +53,12 @@ const SCHEMA = [
   'CREATE INDEX IF NOT EXISTS chaty_msgs_i ON chaty_msgs(chat,i)',
   'CREATE TABLE IF NOT EXISTS chaty_hidden(msg INTEGER,user TEXT,PRIMARY KEY(msg,user))',
   'CREATE TABLE IF NOT EXISTS chaty_push(endpoint TEXT PRIMARY KEY,user TEXT,p256dh TEXT,auth TEXT,created INTEGER)',
+  'CREATE TABLE IF NOT EXISTS chaty_contacts(owner TEXT,target TEXT,created INTEGER,PRIMARY KEY(owner,target))',
+  'CREATE TABLE IF NOT EXISTS chaty_blocks(owner TEXT,target TEXT,created INTEGER,PRIMARY KEY(owner,target))',
+  'CREATE TABLE IF NOT EXISTS chaty_presence(user TEXT PRIMARY KEY,last_seen INTEGER)',
+  'CREATE TABLE IF NOT EXISTS chaty_receipts(msg INTEGER,user TEXT,delivered INTEGER,read_at INTEGER,PRIMARY KEY(msg,user))',
+  'CREATE TABLE IF NOT EXISTS chaty_notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user TEXT,chat TEXT,msg INTEGER,from_user TEXT,body TEXT,created INTEGER,read_at INTEGER)',
+  'CREATE INDEX IF NOT EXISTS chaty_notifications_user ON chaty_notifications(user,read_at,created)',
   'CREATE INDEX IF NOT EXISTS chaty_push_user ON chaty_push(user)',
   'CREATE TABLE IF NOT EXISTS chaty_meta(k TEXT PRIMARY KEY,v INTEGER)',
   "INSERT OR IGNORE INTO chaty_meta(k,v) VALUES('rev',0)"
@@ -127,6 +134,7 @@ async function act(a, b, me) {
     case 'me': {
       const u = (await q('SELECT id,name,pv,bio FROM chaty_users WHERE id=?', [me]))[0];
       if (!u) throw new E('auth', 401);
+      await q('INSERT INTO chaty_presence(user,last_seen) VALUES(?,?) ON CONFLICT(user) DO UPDATE SET last_seen=excluded.last_seen', [me, now()]);
       return { id: u.id, name: u.name, photo: ph(u.id, u.pv), bio: u.bio || '' };
     }
     case 'profile': {
@@ -139,9 +147,9 @@ async function act(a, b, me) {
     }
     case 'user': {
       const n = norm(b.number);
-      const u = (await q('SELECT u.id,u.name,u.pv,u.bio,u.created,a.alias FROM chaty_users u LEFT JOIN chaty_alias a ON a.owner=? AND a.target=u.id WHERE u.id=?', [me, n]))[0];
+      const u = (await q('SELECT u.id,u.name,u.pv,u.bio,u.created,a.alias,EXISTS(SELECT 1 FROM chaty_blocks b WHERE b.owner=? AND b.target=u.id) blocked FROM chaty_users u LEFT JOIN chaty_alias a ON a.owner=? AND a.target=u.id WHERE u.id=?', [me, me, n]))[0];
       if (!u) throw new E('Usuario no encontrado', 404);
-      return { id: u.id, name: u.name, alias: u.alias || '', photo: ph(u.id, u.pv), bio: u.bio || 'Hola, estoy usando Chaty', created: u.created || 0 };
+      return { id: u.id, name: u.name, alias: u.alias || '', photo: ph(u.id, u.pv), bio: u.bio || 'Hola, estoy usando Chaty', created: u.created || 0, blocked: !!u.blocked };
     }
     case 'alias': {
       const n = norm(b.number), al = String(b.alias || '').trim();
@@ -150,6 +158,55 @@ async function act(a, b, me) {
       if (!al) await q('DELETE FROM chaty_alias WHERE owner=? AND target=?', [me, n]);
       else await q('INSERT INTO chaty_alias(owner,target,alias) VALUES(?,?,?) ON CONFLICT(owner,target) DO UPDATE SET alias=excluded.alias', [me, n, al]);
       return { ok: 1 };
+    }
+    case 'presence': {
+      await q('INSERT INTO chaty_presence(user,last_seen) VALUES(?,?) ON CONFLICT(user) DO UPDATE SET last_seen=excluded.last_seen', [me, now()]);
+      return { ok: 1, at: now() };
+    }
+    case 'contacts': {
+      const rows = await q(`SELECT u.id,u.name,u.pv,a.alias,COALESCE(p.last_seen,0) last_seen
+        FROM chaty_contacts c JOIN chaty_users u ON u.id=c.target
+        LEFT JOIN chaty_alias a ON a.owner=c.owner AND a.target=c.target
+        LEFT JOIN chaty_presence p ON p.user=u.id WHERE c.owner=? ORDER BY COALESCE(a.alias,u.name) COLLATE NOCASE`, [me]);
+      return rows.map(u => ({ id:u.id, name:u.alias||u.name, realName:u.name, photo:ph(u.id,u.pv), lastSeen:u.last_seen, online:now()-u.last_seen<45 }));
+    }
+    case 'contact_add': {
+      const n=norm(b.number); if(n===me) throw new E('Ese es tu propio número');
+      if(!(await q('SELECT 1 FROM chaty_users WHERE id=?',[n])).length) throw new E('Ese número no está en Chaty',404);
+      await q('INSERT OR IGNORE INTO chaty_contacts(owner,target,created) VALUES(?,?,?)',[me,n,now()]);
+      return {ok:1};
+    }
+    case 'contact_remove': {
+      const n=norm(b.number); await q('DELETE FROM chaty_contacts WHERE owner=? AND target=?',[me,n]); return {ok:1};
+    }
+    case 'block': {
+      const n=norm(b.number); if(n===me) throw new E('No puedes bloquearte');
+      if(b.blocked) await q('INSERT OR IGNORE INTO chaty_blocks(owner,target,created) VALUES(?,?,?)',[me,n,now()]);
+      else await q('DELETE FROM chaty_blocks WHERE owner=? AND target=?',[me,n]);
+      return {ok:1};
+    }
+    case 'notifications': {
+      const rows=await q(`SELECT id,chat,msg,from_user,body,created,read_at FROM chaty_notifications WHERE user=? ORDER BY id DESC LIMIT 60`,[me]);
+      return rows;
+    }
+    case 'notification_read': {
+      if(b.all) await q('UPDATE chaty_notifications SET read_at=? WHERE user=? AND read_at IS NULL',[now(),me]);
+      else await q('UPDATE chaty_notifications SET read_at=? WHERE id=? AND user=?',[now(),+b.id,me]);
+      return {ok:1};
+    }
+    case 'receipt_delivered': {
+      await q(`INSERT INTO chaty_receipts(msg,user,delivered,read_at) SELECT m.i,?, ?, NULL FROM chaty_msgs m JOIN chaty_members mb ON mb.chat=m.chat AND mb.user=? WHERE m.f<>? AND m.d=0 ON CONFLICT(msg,user) DO UPDATE SET delivered=COALESCE(chaty_receipts.delivered,excluded.delivered)`,[me,now(),me,me]);
+      return {ok:1};
+    }
+    case 'receipt_read': {
+      const id=String(b.chat||'');
+      const rows=await q(`SELECT m.i FROM chaty_msgs m JOIN chaty_members mb ON mb.chat=m.chat AND mb.user=? WHERE m.chat=? AND m.f<>? AND m.d=0`,[me,id,me]);
+      if(rows.length) await db.batch(rows.map(x=>({sql:'INSERT INTO chaty_receipts(msg,user,delivered,read_at) VALUES(?,?,?,?) ON CONFLICT(msg,user) DO UPDATE SET delivered=excluded.delivered,read_at=excluded.read_at',args:[x.i,me,now(),now()]})),'write');
+      return {ok:1};
+    }
+    case 'receipt_status': {
+      const id=String(b.chat||'');
+      return await q(`SELECT m.i,COUNT(r.user) delivered,MAX(r.read_at) read_at FROM chaty_msgs m LEFT JOIN chaty_receipts r ON r.msg=m.i WHERE m.chat=? AND m.f=? GROUP BY m.i ORDER BY m.i DESC LIMIT 200`,[id,me]);
     }
     case 'chats': {
       const [cs, pe] = (await db.batch([
@@ -178,6 +235,8 @@ async function act(a, b, me) {
         { sql: 'INSERT OR IGNORE INTO chaty_members(chat,user) SELECT ?,? WHERE EXISTS(SELECT 1 FROM chaty_users WHERE id=?)', args: [id, me, n] },
         { sql: 'INSERT OR IGNORE INTO chaty_members(chat,user) SELECT ?,? WHERE EXISTS(SELECT 1 FROM chaty_users WHERE id=?)', args: [id, n, n] }], 'write');
       if (!R[0].rows.length) throw new E('Ese número no está en Chaty', 404);
+      await q('INSERT OR IGNORE INTO chaty_contacts(owner,target,created) VALUES(?,?,?)',[me,n,now()]);
+      await q('INSERT OR IGNORE INTO chaty_contacts(owner,target,created) VALUES(?,?,?)',[n,me,now()]);
       return { id };
     }
     case 'group': {
@@ -193,6 +252,21 @@ async function act(a, b, me) {
         { sql: `INSERT INTO chaty_msgs(chat,f,x,t,r) VALUES(?,'sys',?,?,${REV})`, args: [id, `${mine.name} creó el grupo "${name}"`, now()] }], 'write');
       return { id };
     }
+    case 'group_member_add': {
+      const chat=String(b.chat||''), ids=[...new Set((Array.isArray(b.members)?b.members:[]).map(norm).filter(x=>x&&x!==me))];
+      const g=(await q("SELECT admin FROM chaty_chats WHERE id=? AND type='g'",[chat]))[0];
+      if(!g) throw new E('Grupo no encontrado',404); if(g.admin!==me) throw new E('Solo el administrador puede agregar miembros',403);
+      const users=ids.length?await q(`SELECT id FROM chaty_users WHERE id IN (${IN(ids)})`,ids):[];
+      await db.batch(users.map(u=>({sql:'INSERT OR IGNORE INTO chaty_members(chat,user) VALUES(?,?)',args:[chat,u.id]})).concat([BUMP]),'write');
+      return {ok:1,added:users.length};
+    }
+    case 'group_member_remove': {
+      const chat=String(b.chat||''), target=norm(b.number);
+      const g=(await q("SELECT admin FROM chaty_chats WHERE id=? AND type='g'",[chat]))[0];
+      if(!g) throw new E('Grupo no encontrado',404); if(g.admin!==me && target!==me) throw new E('No tienes permiso',403);
+      await db.batch([BUMP,{sql:'DELETE FROM chaty_members WHERE chat=? AND user=?',args:[chat,target]}],'write');
+      return {ok:1};
+    }
     case 'msgs': {
       const id = String(b.chat || ''), s = Math.max(0, +b.since || 0), first = !s;
       const MC = 'm.i,m.f,m.x,m.t,m.r,m.d,m.e,m.qi,m.qf,m.qx,(SELECT 1 FROM chaty_hidden h WHERE h.msg=m.i AND h.user=?) hid';
@@ -203,7 +277,7 @@ async function act(a, b, me) {
               : { sql: `SELECT ${MC} FROM chaty_msgs m WHERE m.chat=? AND m.r>? ORDER BY m.i`, args: [me, id, s] }];
       if (first) st.push(
         { sql: 'SELECT id,type,name,admin,created FROM chaty_chats WHERE id=?', args: [id] },
-        { sql: 'SELECT u.id,u.name,u.pv,(SELECT alias FROM chaty_alias a WHERE a.owner=? AND a.target=u.id) al FROM chaty_members m JOIN chaty_users u ON u.id=m.user WHERE m.chat=?', args: [me, id] });
+        { sql: 'SELECT u.id,u.name,u.pv,(SELECT alias FROM chaty_alias a WHERE a.owner=? AND a.target=u.id) al,(SELECT last_seen FROM chaty_presence p WHERE p.user=u.id) last_seen FROM chaty_members m JOIN chaty_users u ON u.id=m.user WHERE m.chat=?', args: [me, id] });
       const R = (await db.batch(st, 'read')).map(r => r.rows);
       if (!R[0].length) throw new E('Chat no encontrado', 404);
       const msgs = [];
@@ -217,7 +291,7 @@ async function act(a, b, me) {
       if (first) {
         const ch = R[3][0], mem = R[4], users = {};
         mem.forEach(u => users[u.id] = { id: u.id, name: u.al || u.name, photo: ph(u.id, u.pv) });
-        if (ch.type === 'p') { const p = mem.find(u => u.id !== me) || mem[0]; r.info = { id, type: 'p', name: users[p.id].name, photo: users[p.id].photo, num: p.id }; }
+        if (ch.type === 'p') { const p = mem.find(u => u.id !== me) || mem[0]; r.info = { id, type: 'p', name: users[p.id].name, photo: users[p.id].photo, num: p.id, lastSeen: mem.find(u=>u.id===p.id).last_seen||0, online: now()-(mem.find(u=>u.id===p.id).last_seen||0)<45 }; }
         else r.info = { id, type: 'g', name: ch.name, photo: null, count: mem.length, members: mem.map(u => ({ ...users[u.id], admin: u.id === ch.admin })), created: ch.created, admin: ch.admin };
         r.users = users;
       }
@@ -226,6 +300,8 @@ async function act(a, b, me) {
     case 'send': {
       const id = String(b.chat || ''), x = String(b.text || '').trim();
       if (!x || x.length > 2000) throw new E('Mensaje vacío o muy largo');
+      const blocked = await q(`SELECT 1 FROM chaty_members m JOIN chaty_blocks b ON ((b.owner=m.user AND b.target=?) OR (b.owner=? AND b.target=m.user)) WHERE m.chat=? AND m.user<>? LIMIT 1`, [me, me, id, me]);
+      if (blocked.length) throw new E('No puedes enviar mensajes a este contacto');
       const R = await db.batch([BUMP,
         { sql: `INSERT INTO chaty_msgs(chat,f,x,t,r,qi,qf,qx) SELECT ?,?,?,?,${REV},q.i,q.f,CASE WHEN q.d=1 THEN '' ELSE substr(q.x,1,120) END
                 FROM (SELECT 1) b LEFT JOIN chaty_msgs q ON q.i=? AND q.chat=? WHERE ${MEMBER}`, args: [id, me, x, now(), +b.reply || 0, id, id, me] },
@@ -233,12 +309,20 @@ async function act(a, b, me) {
       if (!R[1].rowsAffected) throw new E('Chat no encontrado', 404);
       const m = R[2].rows[0], o = { i: m.i, f: m.f, x: m.x, t: m.t, r: m.r };
       if (m.qi != null) o.q = { i: m.qi, f: m.qf, x: m.qx };
+      const recipients=(await q('SELECT user FROM chaty_members WHERE chat=? AND user<>?',[id,me])).map(v=>v.user);
+      for (const recipient of recipients) {
+        const nr=await q('INSERT INTO chaty_notifications(user,chat,msg,from_user,body,created) VALUES(?,?,?,?,?,?) RETURNING id',[recipient,id,m.i,me,x.slice(0,160),now()]);
+        waitUntil(realtime.emit('user-'+recipient,'notification.created',{notificationId:Number(nr[0].id),chatId:id,at:now()}).catch(e=>console.error('realtime',e.message)));
+      }
+      waitUntil(realtime.emit('chat-'+id,'chat.message',{chatId:id,messageId:Number(m.i),senderId:me,at:now()}).catch(e=>console.error('realtime',e.message)));
       waitUntil(notify(id, me, x).catch(e => console.error('push', e && e.message)));
       return { ok: 1, msg: o };
     }
     case 'edit': {
       const x = String(b.text || '').trim(), ch = String(b.chat || '');
       if (!x || x.length > 2000) throw new E('Mensaje vacío o muy largo');
+      const blocked = await q(`SELECT 1 FROM chaty_members m JOIN chaty_blocks b ON ((b.owner=m.user AND b.target=?) OR (b.owner=? AND b.target=m.user)) WHERE m.chat=? AND m.user<>? LIMIT 1`, [me, me, id, me]);
+      if (blocked.length) throw new E('No puedes enviar mensajes a este contacto');
       const R = await db.batch([BUMP, { sql: `UPDATE chaty_msgs SET x=?,e=?,r=${REV} WHERE i=? AND chat=? AND f=? AND d=0 AND ?-t<=900 AND ${MEMBER}`, args: [x, now(), +b.id, ch, me, now(), ch, me] }], 'write');
       if (!R[1].rowsAffected) throw new E('Ya no se puede editar este mensaje');
       return { ok: 1 };
@@ -279,11 +363,35 @@ app.post('/api', express.json({ limit: '1mb' }), async (req, res) => {
     res.set('Cache-Control', 'no-store').json(r);
   } catch (e) {
     if (!e.code) console.error(e);
-    const msg = e.code ? e.message : (!cfg.TURSO_TOKEN ? 'Falta el token de Turso en config.js' : 'Error del servidor');
+    const msg = e.code ? e.message : (!cfg.TURSO_TOKEN || !cfg.TURSO_URL ? 'Configura TURSO_DATABASE_URL y TURSO_AUTH_TOKEN en Vercel' : 'Error del servidor');
     res.status(e.code || 500).set('Cache-Control', 'no-store').json({ err: msg });
   }
 });
-app.get('/api', (req, res) => res.json({ ok: 1, db: !!cfg.TURSO_TOKEN, push: !!vapidPub() }));
+app.get('/api', (req, res) => res.json({ ok: 1, db: !!(cfg.TURSO_URL && cfg.TURSO_TOKEN), push: !!vapidPub(), realtime: !!(cfg.UPSTASH_REDIS_REST_URL && cfg.UPSTASH_REDIS_REST_TOKEN) }));
+
+app.get('/api/realtime', async (req,res) => {
+  try {
+    const { handle } = await import('@upstash/realtime');
+    const { getRealtime } = require('./realtime');
+    const rt = await getRealtime();
+    const handler = handle({ realtime: rt, middleware: async ({ request, channels }) => {
+      const user = sess({headers:{cookie:request.headers.get('cookie')||''}});
+      if (!user) return new Response('Unauthorized',{status:401});
+      for (const channel of channels) {
+        if (channel.startsWith('user-') && channel !== 'user-'+user) return new Response('Forbidden',{status:403});
+        if (channel.startsWith('chat-')) {
+          const chatId=channel.slice(5);
+          if (!(await q('SELECT 1 FROM chaty_members WHERE chat=? AND user=?',[chatId,user])).length) return new Response('Forbidden',{status:403});
+        }
+      }
+    }});
+    const request = new Request(`${req.protocol}://${req.get('host')}${req.originalUrl}`,{headers:req.headers});
+    const response = await handler(request);
+    res.status(response.status);
+    response.headers.forEach((v,k)=>res.setHeader(k,v));
+    if(response.body) require('node:stream').Readable.fromWeb(response.body).pipe(res); else res.end();
+  } catch(e) { console.error('realtime route',e); if(!res.headersSent)res.status(503).json({err:'Realtime no disponible'}); }
+});
 
 app.get('/p/:id', async (req, res) => {
   try {

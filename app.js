@@ -45,7 +45,7 @@ $('#fr').onsubmit=async e=>{e.preventDefault();if(!pickN)return $('#re').textCon
  const r=await api('register',d);r.err?$('#re').textContent=r.err:start()};
 async function loadCountries(){if(CT.length)return;const r=await api('countries');if(!Array.isArray(r))return;CT=r;$('#rc').innerHTML=CT.map(c=>`<option value="${c.code}">${c.name} (+${c.dial})</option>`).join('');await genNums()}
 async function start(){loadCountries();const m=await api('me');if(m.err)return showAuth(0);me=m;
- $('#auth').classList.add('hidden');$('#app').classList.remove('hidden');$('#splash').classList.add('hidden');head();await loadChats(1);pushInit();
+ $('#auth').classList.add('hidden');$('#app').classList.remove('hidden');$('#splash').classList.add('hidden');head();await loadChats(1);pushInit();refreshNotifications();subscribeUser();api('presence');setInterval(()=>{if(me)api('presence')},20000);
  const c=new URLSearchParams(location.search).get('chat');if(c){history.replaceState(null,'','/');openChat(c)}}
 /* ---- notificaciones push ---- */
 const u8=k=>Uint8Array.from(atob(k.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-k.length%4)%4)),c=>c.charCodeAt(0));
@@ -65,7 +65,7 @@ async function enablePush(){try{
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.chat&&me)openChat(e.data.chat)})}
 function head(){$('#myav').replaceChildren(av(me,'s'));const s=mk('small');s.textContent=fmt(me.id);$('#myname').replaceChildren(me.name,s)}
 /* ---- lista de chats ---- */
-async function loadChats(force){const r=await api('chats');if(!Array.isArray(r))return;const s=JSON.stringify(r);if(s===lastL&&!force)return;lastL=s;chats=r;drawList()}
+async function loadChats(force){if(me)api('receipt_delivered');const r=await api('chats');if(!Array.isArray(r))return;const s=JSON.stringify(r);if(s===lastL&&!force)return;lastL=s;chats=r;drawList()}
 function drawList(){const L=$('#list');L.innerHTML='';
  if(!chats.length){const d=mk('div','l','Aún no tienes chats. Toca + para empezar.');d.style.cssText='padding:24px;text-align:center;color:var(--m)';L.append(d)}
  chats.forEach(c=>{const row=mk('div','row'+(cur==c.id?' on':'')),i=mk('div','i2'),nm=mk('div','n',c.name);if(c.type!='p')nm.insertAdjacentHTML('beforeend',ic('users','sm'));i.append(nm);
@@ -73,10 +73,10 @@ function drawList(){const L=$('#list');L.innerHTML='';
   row.append(av(c),i,mk('div','tm',c.last?hm(c.last.t):''));row.onclick=()=>openChat(c.id);L.append(row)})}
 function bump(id,t){const c=chats.find(x=>x.id==id);if(!c)return;c.last={f:me.id,x:t,t:now()};c.ts=now();chats.sort((a,b)=>b.ts-a.ts);lastL='';drawList()}
 /* ---- chat ---- */
-function hdr(c){$('#cname').textContent=c.name||'';$('#csub').textContent=c.type=='g'?(c.members?c.members.length:c.count||0)+' miembros':(c.num?fmt(c.num):'');$('#cav').replaceChildren(av(c,'s'))}
+function hdr(c){$('#cname').textContent=c.name||'';$('#csub').textContent=c.type=='g'?(c.members?c.members.length:c.count||0)+' miembros':(c.online?'En línea':c.lastSeen?'Última vez '+hm(c.lastSeen):c.num?fmt(c.num):'');$('#cav').replaceChildren(av(c,'s'))}
 function openChat(id){cur=id;const c=chats.find(x=>x.id==id)||{id,name:''};const S=ST[id]=ST[id]||{map:{},ids:[],rev:0,users:{},info:c};
  $('#empty').classList.add('hidden');$('#chat').classList.remove('hidden');$('#app').classList.add('open');$('#emo').classList.add('hidden');ctxSet(null);
- hdr(S.info.name?S.info:c);const M=$('#msgs');M.innerHTML='';S.ids.forEach(i=>M.append(bubble(S,S.map[i])));M.scrollTop=M.scrollHeight;drawList();poll()}
+ hdr(S.info.name?S.info:c);subscribeChat(id);const M=$('#msgs');M.innerHTML='';S.ids.forEach(i=>M.append(bubble(S,S.map[i])));M.scrollTop=M.scrollHeight;drawList();poll()}
 function nameOf(S,f){return f==me.id?'Tú':(S.users[f]||{}).name||fmt(f)}
 function bubble(S,m){
  if(m.f=='sys'){const s=mk('div','sys',m.x);s.dataset.i=m.i;return s}
@@ -85,14 +85,15 @@ function bubble(S,m){
  if(m.q&&!m.d){const q=mk('div','q'),o=S.map[m.q.i],t=mk('span');q.append(mk('b','',nameOf(S,m.q.f)),t);rich(t,o&&o.d||!m.q.x?'Mensaje eliminado':m.q.x);
   q.onclick=e=>{e.stopPropagation();const el=$('#msgs').querySelector(`[data-i="${m.q.i}"]`);if(el){el.scrollIntoView({block:'center'});el.classList.add('hl');setTimeout(()=>el.classList.remove('hl'),1200)}};b.append(q)}
  const t=mk('div','bt');m.d?t.textContent='Se eliminó este mensaje':rich(t,m.x);
- b.append(t,mk('div','h',(m.fail?'No enviado · ':m.e?'editado · ':'')+hm(m.t)));b.onclick=()=>menu(S,m);return b}
+ b.append(t,mk('div','h',(m.fail?'No enviado · ':m.e?'editado · ':'')+hm(m.t)+(mine?'  ✓':'') ));b.onclick=()=>menu(S,m);return b}
 function put(S,m){const M=$('#msgs'),o=M.querySelector(`[data-i="${m.i}"]`);
  if(m.gone){delete S.map[m.i];S.ids=S.ids.filter(x=>x!=m.i);o&&o.remove();return}
  const isNew=!S.map[m.i];S.map[m.i]=m;const e=bubble(S,m);if(S.ready&&!o)e.classList.add('pop');if(o)o.replaceWith(e);else M.append(e);if(isNew)S.ids.push(m.i)}
+async function updateReceipts(id){const rows=await api('receipt_status',{chat:id});if(!Array.isArray(rows))return;rows.forEach(x=>{const el=$('#msgs').querySelector(`[data-i=\"${x.i}\"]`);if(!el)return;const h=el.querySelector('.h');if(!h)return;const base=hm((ST[id].map[x.i]||{}).t||now());h.textContent=base+(x.read_at?'  ✓✓':x.delivered?'  ✓✓':'  ✓');h.classList.toggle('seen',!!x.read_at)})}
 async function poll(){if(!cur||pbusy)return;pbusy=1;const id=cur,S=ST[id];const r=await api('msgs',{chat:id,since:S.rev});pbusy=0;if(r.err||id!=cur)return;
  if(r.users){S.users=r.users;S.info=r.info;hdr(r.info)}
  if(r.msgs.length||!S.ready){const M=$('#msgs'),bot=!S.ready||M.scrollHeight-M.scrollTop-M.clientHeight<140;r.msgs.forEach(m=>put(S,m));if(bot)M.scrollTop=M.scrollHeight}
- S.rev=r.rev;S.ready=1}
+ S.rev=r.rev;S.ready=1;await api('receipt_read',{chat:id});updateReceipts(id);}
 (function tick(){poll();setTimeout(tick,document.hidden?6000:1300)})();
 setInterval(()=>{if(me)loadChats()},5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){poll();loadChats()}});
@@ -115,36 +116,37 @@ $('#bar').onsubmit=e=>{e.preventDefault();const inp=$('#mi'),t=inp.value.trim();
  put(S,m);const M=$('#msgs');M.scrollTop=M.scrollHeight;bump(id,t);
  api('send',{chat:id,text:t,reply:c&&c.t=='r'?c.m.i:0}).then(r=>{delete S.map[tmp];S.ids=S.ids.filter(x=>x!=tmp);const el=M.querySelector(`[data-i="${tmp}"]`);
   if(r.err){if(el){m.pend=0;m.fail=1;el.replaceWith(bubble(S,m));el.remove}return}
-  if(el)el.remove();if(id==cur){put(S,r.msg);M.scrollTop=M.scrollHeight}});
+  if(el)el.remove();if(id==cur){put(S,r.msg);M.scrollTop=M.scrollHeight}refreshNotifications()});
  setTimeout(poll,350)};
 $('.send').onpointerdown=e=>e.preventDefault();
-$('#back').onclick=()=>{$('#app').classList.remove('open');cur=null;drawList()};
+$('#back').onclick=()=>{$('#app').classList.remove('open');cur=null;if(liveSource){liveSource.close();liveSource=null;liveChat=''}drawList()};
 /* ---- modales / info ---- */
 const modal=h=>{const m=$('#modal');m.innerHTML='';const s=mk('div','sheet');m.append(s);m.classList.remove('hidden');m.onclick=e=>{if(e.target==m)m.classList.add('hidden')};h(s);return s};
 const big=u=>{const a=av(u);a.style.cssText+=';width:96px;height:96px;font-size:2.4rem;align-self:center';return a};
 const sec=(l,v)=>{const d=mk('div','sec'),s=mk('small',null,l),t=mk('div');t.textContent=v;d.append(s,t);return d};
 const dt=t=>new Date(t*1e3).toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'});
 function userInfo(num){modal(s=>{s.append(mk('div','sub','Cargando…'));api('user',{number:num}).then(u=>{if(u.err){s.textContent=u.err;return}s.innerHTML='';
- const al=Object.assign(mk('input'),{value:u.alias,placeholder:'Nombre con el que lo tienes guardado',maxLength:25}),sv=mk('button','btn','Guardar nombre'),go=mk('button','btn','Enviar mensaje'),er=mk('div','err');
+ const al=Object.assign(mk('input'),{value:u.alias,placeholder:'Nombre con el que lo tienes guardado',maxLength:25}),sv=mk('button','btn','Guardar nombre'),go=mk('button','btn','Enviar mensaje'),bl=mk('button','act red',u.blocked?'Desbloquear contacto':'Bloquear contacto'),er=mk('div','err');
+ bl.onclick=async()=>{const r=await api('block',{number:u.id,blocked:!u.blocked});if(r.err){er.textContent=r.err;return}u.blocked=!u.blocked;bl.textContent=u.blocked?'Desbloquear contacto':'Bloquear contacto'};
  sv.onclick=async()=>{const r=await api('alias',{number:u.id,alias:al.value});if(r.err)return er.textContent=r.err;$('#modal').classList.add('hidden');await loadChats(1);if(cur){const id=cur;delete ST[id];openChat(id)}};
  go.onclick=async()=>{const r=await api('add',{number:u.id});if(r.err)return er.textContent=r.err;$('#modal').classList.add('hidden');await loadChats(1);openChat(r.id)};
  s.append(big({id:u.id,name:u.alias||u.name,photo:u.photo}),mk('div','big',u.alias||u.name));if(u.alias)s.append(mk('div','sub','Nombre en Chaty: '+u.name));
- s.append(sec('Número',fmt(u.id)),sec('Info.',u.bio),sec('En Chaty desde',dt(u.created)),mk('div','sub','Guardar como'),al,er,sv,go)})})}
+ s.append(sec('Número',fmt(u.id)),sec('Info.',u.bio),sec('En Chaty desde',dt(u.created)),mk('div','sub','Guardar como'),al,er,sv,go,bl)})})}
 function groupInfo(S){const g=S.info;modal(s=>{s.append(big({id:g.id,name:g.name}),mk('div','big',g.name),mk('div','sub','Grupo · '+(g.members||[]).length+' miembros'));
  if(g.created)s.append(sec('Creado',dt(g.created)+' por '+nameOf(S,g.admin)));
- (g.members||[]).forEach(u=>{const r=mk('div','mem'),i=mk('div'),n=mk('b',null,u.id==me.id?'Tú':u.name);if(u.admin){n.append(mk('span','pill','Admin'))}const sb=mk('div','sub',fmt(u.id));sb.style.textAlign='left';i.append(n,sb);r.append(av(u,'s'),i);if(u.id!=me.id)r.onclick=()=>userInfo(u.id);s.append(r)})})}
+ (g.members||[]).forEach(u=>{const r=mk('div','mem'),i=mk('div'),n=mk('b',null,u.id==me.id?'Tú':u.name);if(u.admin){n.append(mk('span','pill','Admin'))}const sb=mk('div','sub',fmt(u.id));sb.style.textAlign='left';i.append(n,sb);r.append(av(u,'s'),i);if(u.id!=me.id)r.onclick=()=>userInfo(u.id);if(g.admin===me.id&&u.id!==me.id){const rm=mk('button','ib');rm.innerHTML=ic('x');rm.title='Quitar miembro';rm.onclick=async e=>{e.stopPropagation();await api('group_member_remove',{chat:g.id,number:u.id});delete ST[g.id];await loadChats(1);openChat(g.id)};r.append(rm)}s.append(r)});if(g.admin===me.id){const add=mk('button','btn','Agregar contactos');add.onclick=async()=>{const contacts=await api('contacts');modal(box=>{box.append(mk('div','big','Agregar miembros'));const chosen=new Set(),list=mk('div');list.style.cssText='display:flex;flex-direction:column;gap:6px';(contacts||[]).filter(u=>!(g.members||[]).some(m=>m.id===u.id)).forEach(u=>{const lab=mk('label','choice'),cb=Object.assign(mk('input'),{type:'checkbox'}),tx=mk('span',null,u.name+' · '+fmt(u.id));cb.onchange=()=>cb.checked?chosen.add(u.id):chosen.delete(u.id);lab.append(cb,av(u,'s'),tx);list.append(lab)});const save=mk('button','btn','Añadir seleccionados');save.onclick=async()=>{if(!chosen.size)return;save.disabled=true;const r=await api('group_member_add',{chat:g.id,members:[...chosen]});if(r.err){save.disabled=false;return}$('#modal').classList.add('hidden');delete ST[g.id];await loadChats(1);openChat(g.id)};box.append(list,save)})};s.append(add)}})}
 $('#chead').onclick=()=>{const S=ST[cur];if(!S)return;S.info.type=='g'?groupInfo(S):S.info.num&&userInfo(S.info.num)};
-$('#newb').onclick=()=>modal(s=>{let tab=0;const t=mk('div','tabs'),b1=mk('button','on','Por número'),b2=mk('button','','Nuevo grupo');t.append(b1,b2);
- const body=mk('div');body.style.cssText='display:flex;flex-direction:column;gap:12px';s.append(t,body);
- const draw=()=>{body.innerHTML='';b1.className=tab?'':'on';b2.className=tab?'on':'';const er=mk('div','err');er.style.minHeight='1em';
-  if(!tab){const i=Object.assign(mk('input'),{placeholder:'Número (+504 9999 9999)',inputMode:'tel'}),go=mk('button','btn','Abrir chat');
-   go.onclick=async()=>{const r=await api('add',{number:i.value});if(r.err)return er.textContent=r.err;$('#modal').classList.add('hidden');await loadChats(1);openChat(r.id)};body.append(i,er,go)}
-  else{const n=Object.assign(mk('input'),{placeholder:'Nombre del grupo',maxLength:30}),m=Object.assign(mk('input'),{placeholder:'Números separados por coma'}),go=mk('button','btn','Crear grupo');
-   go.onclick=async()=>{const r=await api('group',{name:n.value,members:m.value.split(/[,;\n]/).map(x=>x.trim()).filter(Boolean)});if(r.err)return er.textContent=r.err;$('#modal').classList.add('hidden');await loadChats(1);openChat(r.id)};body.append(n,m,er,go)}};
- b1.onclick=()=>{tab=0;draw()};b2.onclick=()=>{tab=1;draw()};draw()});
+async function contactList(){const rows=await api('contacts');modal(s=>{s.append(mk('div','big','Contactos'),mk('div','muted',(rows||[]).length+' personas guardadas'));if(!Array.isArray(rows)||!rows.length)s.append(mk('div','sub','Todavía no tienes contactos. Agrega uno para empezar.'));(rows||[]).forEach(u=>{const r=mk('div','contactline'),g=mk('div','grow'),n=mk('b',null,u.name),st=mk('small');st.innerHTML=u.online?'<span class="online-dot"></span>En línea':'Última vez '+(u.lastSeen?hm(u.lastSeen):'desconocida');g.append(n,st);const open=mk('button','ib');open.innerHTML=ic('bubble');open.title='Abrir chat';open.onclick=async()=>{const a=await api('add',{number:u.id});if(!a.err){$('#modal').classList.add('hidden');await loadChats(1);openChat(a.id)}};const del=mk('button','ib');del.innerHTML=ic('trash');del.title='Eliminar contacto';del.onclick=async()=>{await api('contact_remove',{number:u.id});r.remove()};r.append(av(u,'s'),g,open,del);s.append(r)})})}
+async function addContact(){modal(s=>{s.append(mk('div','big','Agregar contacto'),mk('div','muted','Busca a alguien por su número de Chaty'));const i=Object.assign(mk('input'),{placeholder:'Número (+504...)',inputMode:'tel'}),er=mk('div','err'),go=mk('button','btn','Agregar contacto');go.onclick=async()=>{go.disabled=true;const r=await api('contact_add',{number:i.value});go.disabled=false;if(r.err){er.textContent=r.err;return}$('#modal').classList.add('hidden');await contactList()};s.append(i,er,go)})}
+async function newGroup(){const contacts=await api('contacts');modal(s=>{s.append(mk('div','big','Crear grupo'),mk('div','muted','Selecciona contactos que ya tienes agregados.'));const name=Object.assign(mk('input'),{placeholder:'Nombre del grupo',maxLength:30}),search=Object.assign(mk('input'),{placeholder:'Buscar contacto'}),list=mk('div'),er=mk('div','err'),go=mk('button','btn','Crear grupo');list.style.cssText='display:flex;flex-direction:column;gap:6px;max-height:36vh;overflow:auto';const chosen=new Set();(contacts||[]).forEach(u=>{const lab=mk('label','choice'),cb=Object.assign(mk('input'),{type:'checkbox',value:u.id}),info=mk('span');info.textContent=u.name+' · '+fmt(u.id);cb.onchange=()=>cb.checked?chosen.add(u.id):chosen.delete(u.id);lab.append(cb,av(u,'s'),info);lab.dataset.search=(u.name+' '+u.id).toLowerCase();list.append(lab)});search.oninput=()=>[...list.children].forEach(x=>x.classList.toggle('hidden',!x.dataset.search.includes(search.value.toLowerCase())));go.onclick=async()=>{if(!name.value.trim()){er.textContent='Escribe un nombre para el grupo';return}if(!chosen.size){er.textContent='Selecciona al menos un contacto';return}go.disabled=true;go.textContent='Creando…';const r=await api('group',{name:name.value,members:[...chosen]});if(r.err){go.disabled=false;go.textContent='Crear grupo';er.textContent=r.err;return}$('#modal').classList.add('hidden');await loadChats(1);openChat(r.id)};s.append(name,search,list,er,go)})}
+async function refreshNotifications(){const rows=await api('notifications');if(!Array.isArray(rows))return;const unread=rows.filter(x=>!x.read_at).length;$('#ncount').textContent=unread>99?'99+':unread;$('#ncount').classList.toggle('hidden',!unread);}
+async function notificationCenter(){const rows=await api('notifications');modal(s=>{const title=mk('div','big','Notificaciones'),all=mk('button','lnk','Marcar todas como leídas');all.onclick=async()=>{await api('notification_read',{all:1});$('#modal').classList.add('hidden');refreshNotifications()};s.append(title,all);if(!rows.length)s.append(mk('div','sub','No tienes notificaciones todavía.'));rows.forEach(n=>{const r=mk('button','contactline'),g=mk('div','grow'),b=mk('b',null,n.read_at?'Notificación':'Nueva notificación'),d=mk('small',null,n.body||'Nuevo mensaje');g.append(b,d);r.append(g,mk('small',null,hm(n.created)));r.style.opacity=n.read_at?'.65':'1';r.onclick=async()=>{await api('notification_read',{id:n.id});$('#modal').classList.add('hidden');await loadChats(1);openChat(n.chat);refreshNotifications()};s.append(r)})})}
+$('#newb').onclick=()=>modal(s=>{s.append(mk('div','big','Acciones'));[['Agregar contacto','Añade a alguien por número',addContact],['Ver contactos','Administra tus contactos',contactList],['Crear grupo','Elige personas que ya agregaste',newGroup],['Notificaciones','Revisa tus avisos internos',notificationCenter]].forEach(([t,d,f])=>{const b=mk('button','act'),g=mk('div'),n=mk('b',null,t),sub=mk('div','muted',d);g.append(n,sub);b.append(g);b.onclick=()=>{ $('#modal').classList.add('hidden');f() };s.append(b)})});
+$('#notifyb').onclick=notificationCenter;
+let liveSource=null,liveChat='',userSource=null;function subscribeUser(){if(userSource)return;try{userSource=new EventSource('/api/realtime?channels='+encodeURIComponent('user-'+me.id));userSource.addEventListener('notification.created',()=>refreshNotifications());userSource.onerror=()=>{};}catch(e){userSource=null}}function subscribeChat(id){if(liveChat===id&&liveSource)return;if(liveSource)liveSource.close();liveChat=id;try{liveSource=new EventSource('/api/realtime?channels='+encodeURIComponent('chat-'+id));['chat.message','chat.changed'].forEach(ev=>liveSource.addEventListener(ev,()=>{if(cur===id)poll();loadChats()}));liveSource.onerror=()=>{};}catch(e){liveSource=null}}
 $('#prof').onclick=()=>modal(s=>{let pv=av(me);const n=Object.assign(mk('input'),{value:me.name,maxLength:25,placeholder:'Nombre'}),bio=Object.assign(mk('input'),{value:me.bio||'',maxLength:80,placeholder:'Info.'}),f=Object.assign(mk('input'),{type:'file',accept:'image/*'}),
  save=mk('button','btn','Guardar'),out=mk('button','lnk');out.innerHTML=ic('logout')+'Cerrar sesión';pv.style.cssText+=';width:90px;height:90px;align-self:center;font-size:2rem';
  f.onchange=()=>{if(f.files[0]){const i=mk('img','av');i.src=URL.createObjectURL(f.files[0]);i.style.cssText='width:90px;height:90px;align-self:center';pv.replaceWith(i);pv=i}};
  save.onclick=async()=>{const d={name:n.value,bio:bio.value};if(f.files[0])d.photo=f.files[0];const r=await api('profile',d);if(!r.err){me=r;head();$('#modal').classList.add('hidden');loadChats(1)}};
  out.onclick=async()=>{try{const reg=await navigator.serviceWorker.getRegistration(),sb=reg&&await reg.pushManager.getSubscription();if(sb){await api('unpush',{endpoint:sb.endpoint});await sb.unsubscribe()}}catch(e){}await api('logout');location.reload()};s.append(pv,mk('div','lnk',fmt(me.id)),n,bio,f,save,out)});
-$('#bell').onclick=enablePush;$('#th1').onclick=$('#th2').onclick=tog;theme(document.documentElement.dataset.theme);eInit();start();
+$('#bell').onclick=enablePush;$('#notifyb').onclick=notificationCenter;$('#th1').onclick=$('#th2').onclick=tog;theme(document.documentElement.dataset.theme);eInit();start();

@@ -1,43 +1,9 @@
-CHATY — actualización visual y funcional
+CHATY EN VERCEL  (archivos sueltos, sin carpetas; las tablas de la base se crean y se actualizan solas)
 
-BASE DE DATOS
-- Turso continúa siendo la única base de datos persistente de Chaty.
-- No se cambia la URL ni la base de datos existente.
-- Las tablas nuevas se crean automáticamente al iniciar la API.
+Las llaves de Turso y de las notificaciones estan en config.js (repo privado). No hace falta poner variables.
 
-TIEMPO REAL
-- Se agregan @upstash/realtime, @upstash/redis y zod.
-- Los eventos se publican en canales privados chat-<id> y user-<id>.
-- El endpoint /api/realtime valida la sesión y la pertenencia al chat.
-- La carga de mensajes conserva el respaldo de sincronización existente.
+1) Sube TODOS estos archivos a tu repositorio de GitHub (en la raiz, reemplazando los anteriores).
+2) Vercel hace el deploy solo. Tus usuarios, chats y mensajes actuales se conservan.
+3) Abre la pagina, recarga forzada, y toca la campana para activar las notificaciones del telefono.
 
-FUNCIONES AGREGADAS
-- Contactos: guardar, consultar, abrir conversación y eliminar de la agenda.
-- Grupos: seleccionar contactos guardados, añadir y quitar miembros (solo admin).
-- Bloqueo: bloquear/desbloquear contactos y evitar enviarles mensajes.
-- Presencia: heartbeat y última conexión; el estado online caduca tras 45 segundos.
-- Confirmaciones de lectura: registros por mensaje y usuario.
-- Notificaciones internas: bandeja persistente, contador de no leídas y marcar como leídas.
-- El botón + ahora agrupa acciones de contacto, agenda, grupos y notificaciones.
-- Rediseño: se elimina el verde dominante; nueva paleta violeta/azul.
-
-CONFIGURACIÓN
-Las credenciales actuales se conservan en config.js del servidor para mantener el despliegue existente.
-También se pueden reemplazar con variables de entorno en Vercel:
-TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, UPSTASH_REDIS_REST_URL,
-UPSTASH_REDIS_REST_TOKEN, SESSION_SECRET y VAPID_PRIVATE_JWK.
-
-SEGURIDAD
-- config.js solo se importa desde index.js; no se sirve como archivo estático.
-- Mantén privado el repositorio y restringe colaboradores.
-- Como el token de Upstash se compartió en una conversación, es recomendable rotarlo en Upstash y actualizarlo en config.js o Vercel.
-- Nunca copies credenciales a app.js, index.html o style.css.
-
-DESPLIEGUE
-1. Sube el contenido de este ZIP a la raíz del repositorio privado.
-2. En Vercel, realiza un nuevo Deploy.
-3. Comprueba /api. Debe devolver db:true y realtime:true.
-4. Abre Chaty en dos sesiones/cuentas para probar mensajes, presencia, recibos y notificaciones.
-
-NOTA
-No se pudo ejecutar una prueba de integración contra tu cuenta real de Turso/Upstash desde este entorno. La sintaxis de los archivos JavaScript sí se verificó; antes de dar por terminada la puesta en producción, revisa el endpoint /api y prueba los flujos con dos cuentas.
+Prueba rapida: tudominio.vercel.app/api  -> debe decir "db":true,"push":true

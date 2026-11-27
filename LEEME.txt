@@ -1,0 +1,13 @@
+CHATY EN VERCEL  (archivos sueltos, sin carpetas; las tablas de la base se crean solas)
+
+Las llaves de Turso y de las notificaciones ya estan en config.js (repo privado).
+NO hace falta poner variables de entorno.
+
+1) Sube TODOS estos archivos a tu repositorio de GitHub (en la raiz, tal cual).
+2) En vercel.com > Add New > Project > importa el repositorio > Deploy.
+3) Abre tu dominio. Crea cuenta, toca la campana de arriba y acepta las notificaciones.
+   - Android: funciona directo en Chrome.
+   - iPhone: Compartir > Anadir a pantalla de inicio, abre Chaty desde ahi y toca la campana.
+
+Prueba rapida: abre  tudominio.vercel.app/api  -> debe decir "db":true,"push":true
+Si el repo alguna vez se hace publico, cambia las llaves de config.js primero.

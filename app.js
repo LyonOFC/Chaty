@@ -44,19 +44,37 @@ function eInit(){const t=$('#etabs');ET.forEach((ch,k)=>{const b=mk('button');b.
  $('#egrid').onclick=e=>{const b=e.target.closest('button');if(!b)return;const i=$('#mi'),s=i.selectionStart??i.value.length;i.setRangeText(b.dataset.e,s,i.selectionEnd??s,'end');sendState()};$('#mi').oninput=sendState;
  $('#eb').onclick=()=>{const p=$('#emo');p.classList.toggle('hidden');if(!p.classList.contains('hidden')&&!$('#egrid').children.length)ePick(0)}}
 /* ---- auth ---- */
-function showAuth(r){$('#splash').classList.add('hidden');$('#app').classList.add('hidden');$('#auth').classList.remove('hidden');$('#fl').classList.toggle('hidden',r);$('#fr').classList.toggle('hidden',!r)}
+async function showAuth(r){
+ $('#splash').classList.add('hidden');$('#app').classList.add('hidden');$('#auth').classList.remove('hidden');
+ $('#fl').classList.toggle('hidden',!!r);$('#fr').classList.toggle('hidden',!r);
+ if(r) await loadCountries();
+}
 $('#go-r').onclick=()=>showAuth(1);$('#go-l').onclick=()=>showAuth(0);
 $('#fl').onsubmit=async e=>{e.preventDefault();const r=await api('login',{number:$('#ln').value,pass:$('#lp').value});r.err?$('#le').textContent=r.err:start()};
 $('#rp').onchange=e=>{const f=e.target.files[0];if(f){const i=mk('img','av');i.src=URL.createObjectURL(f);$('#pvw').replaceWith(i);i.id='pvw'}};
-async function genNums(){pickN=null;const n=await api('numbers',{cc:$('#rc').value});const c=$('#chips');c.innerHTML='';if(!Array.isArray(n))return;n.forEach(x=>{const b=mk('button','chip',fmt(x));b.type='button';b.onclick=()=>{pickN=x;[...c.children].forEach(y=>y.classList.remove('on'));b.classList.add('on')};c.append(b)})}
+async function genNums(){
+ pickN=null;const c=$('#chips');c.innerHTML='';$('#re').textContent='';c.append(mk('div','hint','Cargando números…'));
+ const n=await api('numbers',{cc:$('#rc').value});c.innerHTML='';
+ if(!Array.isArray(n)){ $('#re').textContent=n.err||'No se pudieron cargar los números. Inténtalo de nuevo.'; return; }
+ n.forEach(x=>{const b=mk('button','chip',fmt(x));b.type='button';b.onclick=()=>{pickN=x;[...c.children].forEach(y=>y.classList.remove('on'));b.classList.add('on');$('#re').textContent=''};c.append(b)});
+ if(!n.length)$('#re').textContent='No hay números disponibles. Pulsa «Ver otros números».';
+}
 $('#rn').onclick=genNums;$('#rc').onchange=genNums;
 $('#fr').onsubmit=async e=>{e.preventDefault();if(!pickN)return $('#re').textContent='Elige un número de la lista';
  const d={number:pickN,name:$('#rname').value,pass:$('#rpass').value};const f=$('#rp').files[0];if(f)d.photo=f;
  const r=await api('register',d);r.err?$('#re').textContent=r.err:start()};
-async function loadCountries(){if(CT.length)return;const r=await api('countries');if(!Array.isArray(r))return;CT=r;$('#rc').innerHTML=CT.map(c=>`<option value="${c.code}">${c.name} (+${c.dial})</option>`).join('');await genNums()}
+let countriesLoading;
+async function loadCountries(){
+ if(CT.length){if(!$('#chips').children.length)await genNums();return}
+ if(countriesLoading)return countriesLoading;
+ countriesLoading=(async()=>{const r=await api('countries');
+  if(!Array.isArray(r)){ $('#re').textContent=r.err||'No se pudieron cargar los países. Revisa tu conexión e inténtalo otra vez.'; return; }
+  CT=r;$('#rc').innerHTML=CT.map(c=>`<option value="${c.code}">${c.name} (+${c.dial})</option>`).join('');await genNums();
+ })().finally(()=>{countriesLoading=null});return countriesLoading;
+}
 
 /* ---- inicio ---- */
-async function start(){loadCountries();const m=await api('me');if(m.err)return showAuth(0);me=m;
+async function start(){loadCountries();const m=await api('me');if(m.err){showAuth(0);return}me=m;
  $('#auth').classList.add('hidden');$('#app').classList.remove('hidden');$('#splash').classList.add('hidden');
  await loadChats(1);cInit=1;setTab(tab);pushInit();api('ping');
  const c=new URLSearchParams(location.search).get('chat');if(c){history.replaceState(null,'','/');openChat(c)}}

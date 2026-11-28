@@ -1,9 +1,16 @@
-CHATY EN VERCEL  (archivos sueltos, sin carpetas; las tablas de la base se crean y se actualizan solas)
+CHATY — v2
 
-Las llaves de Turso y de las notificaciones estan en config.js (repo privado). No hace falta poner variables.
+Base de datos: Turso (sin cambios). Las tablas nuevas y las columnas nuevas se crean/migran solas
+la primera vez que arranca el servidor (no hay que tocar nada en Turso).
 
-1) Sube TODOS estos archivos a tu repositorio de GitHub (en la raiz, reemplazando los anteriores).
-2) Vercel hace el deploy solo. Tus usuarios, chats y mensajes actuales se conservan.
-3) Abre la pagina, recarga forzada, y toca la campana para activar las notificaciones del telefono.
+Tiempo real: Upstash Redis (pub/sub). Las llaves están en config.js (repo privado).
+  - Cada usuario abre /api/stream (SSE). El servidor se suscribe a su canal "u:<numero>" en Upstash.
+  - Al enviar/leer/escribir, el servidor publica el evento y le llega al instante a los demás.
+  - Si el SSE se cae, la app vuelve sola a consultar cada 3 s (y cada 20 s como respaldo).
 
-Prueba rapida: tudominio.vercel.app/api  -> debe decir "db":true,"push":true
+Instalar:  npm install
+Subir a Vercel como siempre (git push).
+
+Novedades: rediseño completo, "en línea" / "últ. vez", "escribiendo…", visto (✓ ✓✓ ✓✓ azul),
+contactos (agregar, ver, editar nombre, eliminar), bloqueo, grupos (crear sin duplicados, agregar/quitar,
+cambiar nombre, salir), perfil con privacidad, avisos dentro de la página con sonido.

@@ -4,6 +4,8 @@ const env = process.env;
 module.exports = {
   TURSO_URL: env.TURSO_DATABASE_URL || 'libsql://hola-lyonofc.aws-ap-south-1.turso.io',
   TURSO_TOKEN: env.TURSO_AUTH_TOKEN || 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTU3NDAxMzIsImlkIjoiMDFhMjFhNzMtNDMwMS03NWQwLWFhZWUtZTBkOTk4YTgwZTMyIiwia2lkIjoianFyMTNqd1hQWVN2MU14cUFTazhOSWdkV2dlSU5JbHkzNWJVanJickZmWSIsInJpZCI6IjZhNzc3Yjg2LTg5NWEtNDkzOC05YWY4LWViOTJkOGVmYTZhMyJ9.cLxZLzeIb_feqTi5uIB5HILjunKbbj6JDDOImReidzq6mmB2lm7q6Fd448B-NRxR2aQo4ByprgxzWmfpE-UGCQ',
+  UPSTASH_URL: env.UPSTASH_REDIS_REST_URL || 'https://humble-polecat-222785.upstash.io',
+  UPSTASH_TOKEN: env.UPSTASH_REDIS_REST_TOKEN || 'gQAAAAAAA2ZBAAIgcDExYWIyZGNkZGY1NzI0MmFmOTBiYzIzNTdjNjAyMzUyZQ',
   VAPID_JWK: env.VAPID_PRIVATE_JWK || env.VAPID_PRIVATE_KEY || {
     alg: 'ES256', key_ops: ['sign'], ext: true, kty: 'EC',
     x: '1gw3DDVBpfNWGZD4RWtALewrXW0Wt86APgPdk6ZDtYA',
